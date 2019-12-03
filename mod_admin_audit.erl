@@ -65,6 +65,7 @@ audit_unique_logons(Args, _Context) ->
     }.
 
 audit_query(Select, Args, Context) ->
+    ?DEBUG({Select, Args}),
     {date_start, DateStart} = proplists:lookup(date_start, Args),
     {date_end, DateEnd}  = proplists:lookup(date_end, Args),
 
@@ -86,26 +87,32 @@ audit_query(Select, Args, Context) ->
             Order = get_order(proplists:get_value(sort, Args)),
 
             #search_sql{select=Select,
-                from="audit audit",
-                order=Order,
-                tables=[{audit, "audit"}],
-                cats_exact=CatExact,
-                assoc=Assoc,
-                where=Where1,
-                args=QueryArgs
-            };
+                        from="audit audit",
+                        order=Order,
+                        tables=[{audit, "audit"}],
+                        cats_exact=CatExact,
+                        assoc=Assoc,
+                        where=Where1,
+                        args=QueryArgs
+                       };
         GroupBy ->
-            {PeriodName, GroupPeriod} = group_period(GroupBy, Context),
-            #search_sql{select=Select ++ ", " ++ GroupPeriod,
-                from="audit audit",
-                group_by=PeriodName,
-                order=PeriodName ++ " ASC",
-                tables=[{audit, "audit"}],
-                cats_exact=CatExact,
-                assoc=Assoc,
-                where=Where1,
-                args=QueryArgs
-            }
+            case is_db_groupable(GroupBy) of
+                true ->
+                    {PeriodName, GroupPeriod} = group_period(GroupBy, Context),
+                    #search_sql{select=Select ++ ", " ++ GroupPeriod,
+                                from="audit audit",
+                                group_by=PeriodName,
+                                order=PeriodName ++ " ASC",
+                                tables=[{audit, "audit"}],
+                                cats_exact=CatExact,
+                                assoc=Assoc,
+                                where=Where1,
+                                args=QueryArgs
+                               };
+                false ->
+                    %% We have to group in erlang
+                    []
+            end
     end.
 
 get_order(undefined) -> "audit.created ASC";
@@ -222,11 +229,11 @@ datamodel() ->
 %% Helpers
 %%
 
-group_period(user, _Context)  ->
-    {"user_id", "user_id"};
+group_period(user, _Context)  -> {"user_id", "user_id"};
+group_period(category, _Context)  -> {"category_id", "category_id"};
+group_period(content_group, _Context) -> {"content_group_id", "content_group_id"};
 group_period(Period, Context)  ->
     group_period_at_tz(Period, z_convert:to_list(z_context:tz(Context))).
-
 
 group_period_at_tz(day, TZ) when is_list(TZ) ->
      {"iso_date", "(extract(year from (created at time zone '" ++ TZ ++ "'))::int, extract(month from (created at time zone '" ++ TZ ++ "'))::int, extract(day from created)::int) as iso_date"} ;
@@ -236,4 +243,13 @@ group_period_at_tz(month, TZ) when is_list(TZ) ->
     {"iso_month", "(extract(year from (created at time zone '" ++ TZ ++ "'))::int, extract(month from (created at time zone '" ++ TZ ++ "'))::int) as iso_month"}.
 
 
-
+%% Returns true iff it is possible to let th database group the audit events 
+%% based on the 
+is_db_groupable(user) -> true;
+is_db_groupable(category) -> true;
+is_db_groupable(content_group) -> true;
+is_db_groupable(day) -> true;
+is_db_groupable(week) -> true;
+is_db_groupable(month) -> true;
+is_db_groupable(_) ->
+    false.
