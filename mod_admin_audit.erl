@@ -81,40 +81,64 @@ audit_query(Select, Args, Context) ->
     end,
 
     CatExact = get_cat_exact(Args),
+    GroupBy = proplists:get_value(group_by, Args),
 
-    case proplists:get_value(group_by, Args) of
-        undefined ->
-            Order = get_order(proplists:get_value(sort, Args)),
-
-            #search_sql{select=Select,
+    case is_db_groupable(GroupBy) of
+        true ->
+            {PeriodName, GroupPeriod} = group_period(GroupBy, Context),
+            #search_sql{select=Select ++ ", " ++ GroupPeriod,
                         from="audit audit",
-                        order=Order,
+                        group_by=PeriodName,
+                        order=PeriodName ++ " ASC",
                         tables=[{audit, "audit"}],
                         cats_exact=CatExact,
                         assoc=Assoc,
                         where=Where1,
                         args=QueryArgs
                        };
-        GroupBy ->
-            case is_db_groupable(GroupBy) of
-                true ->
-                    {PeriodName, GroupPeriod} = group_period(GroupBy, Context),
-                    #search_sql{select=Select ++ ", " ++ GroupPeriod,
+        false ->
+            %% Now we either don't have to group, or we have to group on an erlang property.
+            Order = get_order(proplists:get_value(sort, Args)),
+            Query = #search_sql{select=Select,
                                 from="audit audit",
-                                group_by=PeriodName,
-                                order=PeriodName ++ " ASC",
+                                order=Order,
                                 tables=[{audit, "audit"}],
                                 cats_exact=CatExact,
                                 assoc=Assoc,
                                 where=Where1,
                                 args=QueryArgs
-                               };
-                false ->
-                    %% We have to group in erlang
-                    []
+                               },
+
+            case GroupBy of
+                undefined -> Query;
+                _ ->
+                    %% Collect the audit event ids
+                    Query1 = Query#search_sql{select="audit.id", assoc=false},
+                    #search_result{result=Rows} = z_search:search_result(Query1, undefined, Context), 
+
+                    %% And group in erlang
+                    Result = group_by(Rows, GroupBy, Context),
+                    #search_result{result=Result}
             end
     end.
 
+group_by(Rows, GroupBy, Context) ->
+    Dict = group_by(Rows, GroupBy, dict:new(), Context),
+    dict:fold(fun(Key, Value, Acc) ->
+                      [[{GroupBy, Key}, {account_ids, Value}] | Acc]
+              end, [], Dict).
+
+
+%%
+group_by([], _, Dict, Context) -> Dict;
+group_by([Id|Rest], GroupBy, Dict, Context) ->
+    Props = m_audit:get(Id, Context),
+    Value = proplists:get_value(GroupBy, Props),
+    Dict1 = dict:append(Value, Id, Dict),
+    group_by(Rest, GroupBy, Dict1, Context).
+
+
+%%
 get_order(undefined) -> "audit.created ASC";
 get_order("+" ++ Field) -> Field ++ " ASC";
 get_order("-" ++ Field) -> Field ++ " DESC".
