@@ -125,7 +125,7 @@ audit_query(Select, Args, Context) ->
 group_by(Rows, GroupBy, Context) ->
     Dict = group_by(Rows, GroupBy, dict:new(), Context),
     dict:fold(fun(Key, Value, Acc) ->
-                      [[{GroupBy, Key}, {account_ids, Value}] | Acc]
+                      [[{GroupBy, Key}, {audit_ids, Value}] | Acc]
               end, [], Dict).
 
 
