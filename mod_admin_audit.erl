@@ -62,7 +62,6 @@ audit_unique_logons(Args, _Context) ->
     }.
 
 audit_query(Select, Args, Context) ->
-    ?DEBUG({Select, Args}),
     {date_start, DateStart} = proplists:lookup(date_start, Args),
     {date_end, DateEnd}  = proplists:lookup(date_end, Args),
 
@@ -128,7 +127,7 @@ group_by(Rows, GroupBy, Context) ->
 
 
 %%
-group_by([], _, Dict, Context) -> Dict;
+group_by([], _, Dict, _Context) -> Dict;
 group_by([Id|Rest], GroupBy, Dict, Context) ->
     Props = m_audit:get(Id, Context),
     Value = proplists:get_value(GroupBy, Props),
@@ -176,27 +175,22 @@ content_groups(FilterIds, Context) ->
 %%
 
 observe_auth_logon_done(Event, Context) -> 
-    try
-        audit(Event, Context)
-    catch
-        Exception:Reason -> ?LOG("Unexpected error auditing logon_done. ~p:~p", [Exception, Reason])
-    end,
+    try_audit(Event, Context),
     undefined.
 observe_auth_logoff_done(Event, Context) -> 
-    try
-        audit(Event, Context)
-    catch
-        Exception:Reason -> ?LOG("Unexpected error auditing logoff_done. ~p:~p", [Exception, Reason])
-    end,
+    try_audit(Event, Context),
     undefined.
-
 observe_auth_logon_error(Event, FoldContext, Context) ->
+    try_audit(Event, Context),
+    FoldContext.
+
+
+try_audit(Event, Context) ->
     try
         audit(Event, Context)
     catch
-        Exception:Reason -> ?LOG("Unexpected error auditing logon_error. ~p:~p", [Exception, Reason])
-    end,
-    FoldContext.
+        Exception:Reason -> ?LOG("Unexpected error during audit. ~p:~p", [Exception, Reason])
+    end.
 
 %%
 %%
@@ -267,3 +261,4 @@ is_db_groupable(week) -> true;
 is_db_groupable(month) -> true;
 is_db_groupable(_) ->
     false.
+
