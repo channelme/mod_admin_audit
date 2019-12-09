@@ -20,10 +20,6 @@
 
     observe_auth_logon_error/3,
 
-    observe_rsc_insert/3,
-    observe_rsc_update_done/2,
-    observe_rsc_delete/2,
-
     observe_audit_log/2,
 
     observe_search_query/2
@@ -32,6 +28,7 @@
 -include_lib("zotonic.hrl").
 -include_lib("modules/mod_admin/include/admin_menu.hrl").
 
+% Observe audit log events. Other modules can store audit events via this.
 observe_audit_log({audit_log, EventCategory, Props}, Context) ->
     m_audit:log(EventCategory, Props, Context);
 observe_audit_log({audit_log, EventCategory, Props, ContentGroupId}, Context) ->
@@ -122,6 +119,7 @@ audit_query(Select, Args, Context) ->
             end
     end.
 
+%% Group the rows by one of the properties of the audit event.
 group_by(Rows, GroupBy, Context) ->
     Dict = group_by(Rows, GroupBy, dict:new(), Context),
     dict:fold(fun(Key, Value, Acc) ->
@@ -138,7 +136,7 @@ group_by([Id|Rest], GroupBy, Dict, Context) ->
     group_by(Rest, GroupBy, Dict1, Context).
 
 
-%%
+%% Order the events.
 get_order(undefined) -> "audit.created ASC";
 get_order("+" ++ Field) -> Field ++ " ASC";
 get_order("-" ++ Field) -> Field ++ " DESC".
@@ -174,7 +172,7 @@ content_groups(FilterIds, Context) ->
 
 
 %%
-%% Users
+%% Observers for logon and logoff events.
 %%
 
 observe_auth_logon_done(Event, Context) -> 
@@ -199,14 +197,6 @@ observe_auth_logon_error(Event, FoldContext, Context) ->
         Exception:Reason -> ?LOG("Unexpected error auditing logon_error. ~p:~p", [Exception, Reason])
     end,
     FoldContext.
-
-%%
-%% Resource mutation
-%%
-
-observe_rsc_insert(Event, Args, Context) -> audit({Event, Args}, Context), Args.
-observe_rsc_update_done(Event, Context) -> audit(Event, Context), undefined.
-observe_rsc_delete(Event, Context) -> audit(Event, Context), undefined.
 
 %%
 %%
