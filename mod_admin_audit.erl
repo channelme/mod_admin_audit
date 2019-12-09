@@ -22,7 +22,9 @@
 
     observe_audit_log/2,
 
-    observe_search_query/2
+    observe_search_query/2,
+
+    observe_tick_6h/2
 ]).
 
 -include_lib("zotonic.hrl").
@@ -49,6 +51,20 @@ observe_search_query(#search_query{search={audit, Args}}, Context) ->
 
 observe_search_query(#search_query{}, _Context) ->
     undefined.
+
+%% Delete audit events which are older than two years.
+observe_tick_6h(tick_6h, Context) ->
+    Now = z_datetime:to_datetime(z_datetime:timestamp()),
+
+    TwoYearsAgo = z_datetime:prev_year(
+                    z_datetime:prev_year(Now)),
+
+    F = fun(Ctx) ->
+                N = z_db:q("delete from audit where created < $1", [TwoYearsAgo], Ctx),
+                {ok, N}
+        end,
+
+    {ok, _N} = z_db:transaction(F, Context).
 
 audit_unique_logons(Args, _Context) ->
     {date_start, DateStart} = proplists:lookup(date_start, Args),
